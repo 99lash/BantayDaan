@@ -1,0 +1,6 @@
+google-genai
+flask
+pillow
+python-dotenv
+authlib
+requests

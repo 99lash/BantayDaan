@@ -1,0 +1,64 @@
+<!-- src/templates/dashboard.html -->
+{% extends "layout.html" %}
+{% block content %}
+<div class="card" style="display: flex; justify-content: space-between; align-items: center;">
+    <h3>Welcome, {{ user.name }}!</h3>
+    <a href="/logout" style="color: #d32f2f; text-decoration: none; font-weight: bold;">Logout</a>
+</div>
+<div class="card">
+    <form id="reportForm" enctype="multipart/form-data">
+        <label>Snap the Issue:</label>
+        <input type="file" name="image" accept="image/*" capture="environment" required>
+        <br><br>
+        <input type="text" name="location" placeholder="Where is this? (e.g. Quezon Ave)" required style="width: 100%; padding: 0.5rem; border-radius: 4px; border: 1px solid #ccc;">
+        <br><br>
+        <button type="submit" id="submitBtn">Submit Report</button>
+    </form>
+</div>
+
+<div id="result" class="card" style="display:none; border-top: 5px solid #4CAF50;">
+    <h4>Agent Status:</h4>
+    <p id="summaryText"></p>
+</div>
+
+<h3>Your Reports</h3>
+<div id="history">
+    {% for t in tickets %}
+    <div class="card ticket">
+        <strong>{{ t.issue }}</strong><br>
+        <small>{{ t.agency }} | {{ t.status }}</small>
+    </div>
+    {% else %}
+    <p>No reports yet. Be the first!</p>
+    {% endfor %}
+</div>
+
+<script>
+    document.getElementById('reportForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('submitBtn');
+        const resDiv = document.getElementById('result');
+        const sumText = document.getElementById('summaryText');
+        
+        btn.innerText = "Agent is working...";
+        btn.disabled = true;
+        
+        const formData = new FormData(e.target);
+        const response = await fetch('/report', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        if (data.summary) {
+            sumText.innerText = data.summary;
+            resDiv.style.display = 'block';
+        } else {
+            alert("Error: " + (data.error || "Unknown error"));
+        }
+        
+        btn.innerText = "Submit Report";
+        btn.disabled = false;
+    };
+</script>
+{% endblock %}
