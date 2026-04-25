@@ -6,7 +6,7 @@ import json
 from dotenv import load_dotenv
 from mock_db import AGENCIES, save_ticket
 
-load_dotenv()
+load_dotenv(override=True)
 
 API_KEY = os.environ.get("GEMINI_API_KEY")
 MODEL = "gemini-robotics-er-1.6-preview"
