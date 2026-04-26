@@ -3,62 +3,210 @@
 {% block content %}
 <div class="card" style="display: flex; justify-content: space-between; align-items: center;">
     <h3>Welcome, {{ user.name }}!</h3>
-    <a href="/logout" style="color: #d32f2f; text-decoration: none; font-weight: bold;">Logout</a>
+    <a href="/logout" style="color: var(--primary); text-decoration: none; font-weight: bold;">Logout</a>
 </div>
+
 <div class="card">
     <form id="reportForm" enctype="multipart/form-data">
         <label>Snap the Issue:</label>
         <input type="file" name="image" accept="image/*" capture="environment" required>
         <br><br>
-        <input type="text" name="location" placeholder="Where is this? (e.g. Quezon Ave)" required style="width: 100%; padding: 0.5rem; border-radius: 4px; border: 1px solid #ccc;">
-        <br><br>
-        <button type="submit" id="submitBtn">Submit Report</button>
+        <div style="display: flex; gap: 10px; margin-bottom: 1rem;">
+            <input type="text" id="locationInput" name="location" placeholder="Where is this? (e.g. Quezon Ave)" required style="flex: 1;">
+            <button type="button" id="geoBtn" style="width: auto; padding: 0.5rem 1rem; font-size: 0.9rem;">📍 Use GPS</button>
+        </div>
+        <input type="hidden" id="gpsCoords" name="gps_coords">
+        <button type="submit" id="analyzeBtn">Analyze with AI</button>
     </form>
 </div>
 
-<div id="result" class="card" style="display:none; border-top: 5px solid #4CAF50;">
-    <h4>Agent Status:</h4>
-    <p id="summaryText"></p>
+<!-- Step 2: Review and Edit Form (Hidden by default) -->
+<div id="reviewSection" class="card" style="display:none; border-top: 5px solid var(--secondary); animation: slideIn 0.4s ease-out;">
+    <div id="duplicateWarning" style="display:none; background: #fff3cd; color: #856404; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; border-left: 5px solid #ffeeba;">
+        ⚠️ <strong>Possible Duplicate:</strong> <span id="duplicateMsg"></span>
+    </div>
+    
+    <h3>Review Report Details</h3>
+    <p style="font-size: 0.9rem; color: var(--text-light); margin-bottom: 1.5rem;">Agent extracted these details. Please verify before submission.</p>
+    
+    <div id="imageContainer" style="position: relative; display: block; margin-bottom: 1.5rem; text-align: center;">
+        <img id="resultImage" src="" style="max-width: 100%; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+        <div id="boundingBox" style="position: absolute; border: 3px solid #ff0000; display: none; pointer-events: none;"></div>
+    </div>
+
+    <form id="finalSubmitForm">
+        <label>Issue Description</label>
+        <input type="text" id="editIssue" name="issue" required>
+        <br><br>
+        <label>Location</label>
+        <input type="text" id="editLocation" name="location" required>
+        <br><br>
+        <label>Responsible Agency</label>
+        <select id="editAgency" name="agency" style="width: 100%; padding: 0.75rem; border-radius: 10px; border: 2px solid #eee;">
+            <!-- Populated by JS -->
+        </select>
+        <br><br>
+        <label>Severity</label>
+        <select id="editSeverity" name="severity" style="width: 100%; padding: 0.75rem; border-radius: 10px; border: 2px solid #eee;">
+            <option value="low">Low</option>
+            <option value="medium" selected>Medium</option>
+            <option value="high">High</option>
+        </select>
+        <br><br>
+        <label>Technical Description for Agency</label>
+        <textarea id="editSummary" name="summary" rows="4" style="width: 100%; padding: 0.75rem; border-radius: 10px; border: 2px solid #eee; font-family: inherit; font-size: 1rem;"></textarea>
+        
+        <input type="hidden" id="finalCoords" name="coordinates">
+        <br><br>
+        <button type="submit" id="confirmBtn" style="background-color: var(--secondary); box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);">Confirm & Submit Report</button>
+    </form>
 </div>
 
 <h3>Your Reports</h3>
 <div id="history">
     {% for t in tickets %}
-    <div class="card ticket">
-        <strong>{{ t.issue }}</strong><br>
-        <small>{{ t.agency }} | {{ t.status }}</small>
+    <div class="card ticket accordion-header" onclick="toggleAccordion('{{ t.id }}')">
+        <div class="ticket-info">
+            <strong>{{ t.issue }}</strong>
+            <small>{{ t.agency }} | {{ t.location }}</small>
+        </div>
+        <span class="status-badge">{{ t.status }}</span>
+    </div>
+    <div id="details-{{ t.id }}" class="accordion-content" style="display: none; padding: 0 1.5rem 1.5rem; margin-top: -1rem; margin-bottom: 1rem; border-radius: 0 0 16px 16px; background: white; box-shadow: 0 8px 16px rgba(0,0,0,0.04);">
+        <hr style="border: 0; border-top: 1px solid #eee; margin-bottom: 1rem;">
+        <p><strong>ID:</strong> {{ t.id }}</p>
+        <p><strong>Severity:</strong> {{ t.severity|capitalize }}</p>
+        {% if t.coordinates %}
+        <p><strong>GPS:</strong> {{ t.coordinates }}</p>
+        {% endif %}
+        <p style="font-style: italic; color: var(--text-light);">Wait for agency response...</p>
     </div>
     {% else %}
-    <p>No reports yet. Be the first!</p>
+    <p style="text-align: center; color: #999; margin-top: 2rem;">No reports yet. Be the first to report an issue!</p>
     {% endfor %}
 </div>
 
 <script>
+    // GPS Logic
+    document.getElementById('geoBtn').onclick = () => {
+        if (!navigator.geolocation) return alert("Geolocation not supported");
+        document.getElementById('geoBtn').innerText = "Locating...";
+        navigator.geolocation.getCurrentPosition((pos) => {
+            const coords = `${pos.coords.latitude},${pos.coords.longitude}`;
+            document.getElementById('gpsCoords').value = coords;
+            document.getElementById('locationInput').value = `GPS: ${coords}`;
+            document.getElementById('geoBtn').innerText = "📍 Located";
+        }, (err) => {
+            alert("Error getting location: " + err.message);
+            document.getElementById('geoBtn').innerText = "📍 Use GPS";
+        });
+    };
+
+    // Step 1: Analysis
     document.getElementById('reportForm').onsubmit = async (e) => {
         e.preventDefault();
-        const btn = document.getElementById('submitBtn');
-        const resDiv = document.getElementById('result');
-        const sumText = document.getElementById('summaryText');
-        
-        btn.innerText = "Agent is working...";
+        const btn = document.getElementById('analyzeBtn');
+        btn.innerText = "Agent is analyzing image...";
         btn.disabled = true;
         
         const formData = new FormData(e.target);
-        const response = await fetch('/report', {
-            method: 'POST',
-            body: formData
-        });
-        
+        const response = await fetch('/report', { method: 'POST', body: formData });
         const data = await response.json();
-        if (data.summary) {
-            sumText.innerText = data.summary;
-            resDiv.style.display = 'block';
+        
+        if (data.analysis) {
+            populateReviewForm(data);
+            document.getElementById('reviewSection').style.display = 'block';
+            document.getElementById('reviewSection').scrollIntoView({ behavior: 'smooth' });
         } else {
             alert("Error: " + (data.error || "Unknown error"));
         }
-        
-        btn.innerText = "Submit Report";
+        btn.innerText = "Analyze with AI";
         btn.disabled = false;
     };
+
+    function populateReviewForm(data) {
+        const { analysis, triage, image_url, agencies } = data;
+        document.getElementById('editIssue').value = analysis.issue;
+        document.getElementById('editLocation').value = document.getElementById('locationInput').value;
+        document.getElementById('editSummary').value = analysis.summary;
+        document.getElementById('finalCoords').value = JSON.stringify(analysis.coordinates);
+        document.getElementById('resultImage').src = image_url;
+        
+        // Agency Dropdown
+        const agencySelect = document.getElementById('editAgency');
+        agencySelect.innerHTML = '';
+        agencies.forEach(a => {
+            const opt = document.createElement('option');
+            opt.value = a;
+            opt.innerText = a;
+            if (a === analysis.agency) opt.selected = true;
+            agencySelect.appendChild(opt);
+        });
+
+        // Bounding Box
+        const bbox = document.getElementById('boundingBox');
+        const coords = analysis.coordinates;
+        if (coords && coords.length === 4 && coords.some(c => c !== 0)) {
+            bbox.style.top = (coords[0] / 10) + '%';
+            bbox.style.left = (coords[1] / 10) + '%';
+            bbox.style.height = ((coords[2] - coords[0]) / 10) + '%';
+            bbox.style.width = ((coords[3] - coords[1]) / 10) + '%';
+            bbox.style.display = 'block';
+        } else {
+            bbox.style.display = 'none';
+        }
+
+        // Triage Warning
+        const warnDiv = document.getElementById('duplicateWarning');
+        if (triage && triage.is_duplicate) {
+            document.getElementById('duplicateMsg').innerText = `Simillar report already exists (${triage.duplicate_ticket_id}). You can still submit if this is different.`;
+            warnDiv.style.display = 'block';
+        } else {
+            warnDiv.style.display = 'none';
+        }
+    }
+
+    // Step 2: Final Submission
+    document.getElementById('finalSubmitForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('confirmBtn');
+        btn.innerText = "Submitting...";
+        btn.disabled = true;
+
+        const payload = {
+            issue: document.getElementById('editIssue').value,
+            location: document.getElementById('editLocation').value,
+            agency: document.getElementById('editAgency').value,
+            severity: document.getElementById('editSeverity').value,
+            summary: document.getElementById('editSummary').value,
+            coordinates: JSON.parse(document.getElementById('finalCoords').value)
+        };
+
+        const response = await fetch('/submit_final', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+        if (result.success) {
+            alert(`Salamat! Report submitted successfully. Ticket ID: ${result.ticket_id}`);
+            window.location.reload();
+        } else {
+            alert("Submission error: " + result.error);
+            btn.innerText = "Confirm & Submit Report";
+            btn.disabled = false;
+        }
+    };
+
+    function toggleAccordion(id) {
+        const content = document.getElementById(`details-${id}`);
+        const isVisible = content.style.display === 'block';
+        
+        // Close all others
+        document.querySelectorAll('.accordion-content').forEach(el => el.style.display = 'none');
+        
+        content.style.display = isVisible ? 'none' : 'block';
+    }
 </script>
 {% endblock %}

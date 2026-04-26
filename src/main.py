@@ -2,8 +2,8 @@
 import os
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 from dotenv import load_dotenv
-from agent_logic import run_bantay_daan_agent
-from mock_db import tickets
+from agent_logic import analyze_report_image, check_duplicate_report
+from mock_db import tickets, save_ticket, get_recent_tickets, AGENCIES
 
 load_dotenv()
 
@@ -59,19 +59,53 @@ def report():
     
     file = request.files.get("image")
     location = request.form.get("location", "Manila")
+    gps_coords = request.form.get("gps_coords") # Expecting "lat,lon"
     
     if file:
-        temp_path = os.path.join("src/assets", file.filename)
+        os.makedirs("src/static/uploads", exist_ok=True)
+        temp_path = os.path.join("src/static/uploads", file.filename)
         file.save(temp_path)
         
         try:
-            summary, _ = run_bantay_daan_agent(temp_path, location)
-            return jsonify({"summary": summary})
+            # Step 1: Vision Analysis
+            analysis = analyze_report_image(temp_path, location, gps_coords)
+            if "error" in analysis:
+                return jsonify(analysis), 500
+            
+            # Step 2: Triage (Deduplication)
+            recent = get_recent_tickets(10)
+            triage_result = check_duplicate_report({"issue": analysis['issue'], "location": location}, recent)
+            
+            return jsonify({
+                "analysis": analysis,
+                "triage": triage_result,
+                "image_url": f"/static/uploads/{file.filename}",
+                "image_path": temp_path,
+                "agencies": list(AGENCIES.keys())
+            })
         except Exception as e:
             return jsonify({"error": str(e)}), 500
     
     return jsonify({"error": "No file"}), 400
 
+@app.route("/submit_final", methods=["POST"])
+def submit_final():
+    if "user" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    data = request.json
+    try:
+        ticket = save_ticket(
+            data['agency'],
+            data['issue'],
+            data['severity'],
+            data['coordinates'],
+            data['location']
+        )
+        return jsonify({"success": True, "ticket_id": ticket['id']})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == "__main__":
-    os.makedirs("src/assets", exist_ok=True)
+    os.makedirs("src/static/uploads", exist_ok=True)
     app.run(debug=True, port=5000)

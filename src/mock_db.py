@@ -39,3 +39,7 @@ def save_ticket(agency, issue, severity, coordinates, location):
     }
     tickets.append(ticket)
     return ticket
+
+def get_recent_tickets(limit=5):
+    """Returns the last N tickets for triage context."""
+    return tickets[-limit:] if tickets else []
